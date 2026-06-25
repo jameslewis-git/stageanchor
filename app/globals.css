@@ -546,3 +546,180 @@ html, body {
   .script-display { padding: 2rem 1rem 6rem; }
   .heard-strip { bottom: -24px; }
 }
+
+/* ========================================================
+   PDF VIEWER
+   ======================================================== */
+
+/* Main viewer containers */
+.pdf-viewer {
+  flex: 1;
+  overflow: auto;
+  background: var(--bg-base);
+}
+
+.pdf-viewer--continuous {
+  padding: 2rem 1.5rem 6rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+}
+
+.pdf-viewer--page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Page container in continuous mode */
+.pdf-page-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.pdf-page-number {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Page wrapper — holds canvas + text layer */
+.pdf-page-wrapper {
+  position: relative;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5), 0 1px 4px rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  overflow: hidden;
+  line-height: 0; /* prevent gap below canvas */
+}
+
+/* Text layer overlay */
+.pdf-text-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  pointer-events: none; /* canvas handles visual; text layer handles clicks */
+}
+
+/* Individual text spans */
+.pdf-span {
+  position: absolute;
+  color: transparent;
+  cursor: pointer;
+  white-space: pre;
+  pointer-events: all;
+  border-radius: 2px;
+  transition: background-color 150ms ease;
+}
+
+.pdf-span:hover {
+  background-color: rgba(124, 111, 247, 0.15);
+}
+
+/* The main highlight — amber/gold, classic teleprompter colour */
+.pdf-span.highlighted {
+  background-color: rgba(251, 191, 36, 0.45);
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.2);
+}
+
+/* ---- Page navigation (page-by-page mode) ---- */
+.pdf-page-nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-surface);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  width: 100%;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pdf-nav-btn {
+  background: var(--bg-elevated);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.9rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.pdf-nav-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.pdf-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.pdf-page-indicator {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  min-width: 100px;
+  text-align: center;
+}
+
+.pdf-page-scroll {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 2rem 1.5rem;
+}
+
+/* ---- Scroll mode toggle buttons ---- */
+.toolbar-controls-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.scroll-mode-toggle {
+  display: flex;
+  align-items: center;
+  background: var(--bg-elevated);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.scroll-mode-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 0.4rem 0.55rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition);
+}
+
+.scroll-mode-btn:hover {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+.scroll-mode-btn--active {
+  color: var(--accent-light);
+  background: var(--accent-tint);
+}
+
+@media (max-width: 600px) {
+  .pdf-viewer--continuous { padding: 1rem 0.5rem 4rem; gap: 1rem; }
+  .pdf-page-scroll { padding: 1rem 0.5rem; }
+  .scroll-mode-btn { padding: 0.4rem 0.45rem; }
+}
+

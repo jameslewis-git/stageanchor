@@ -1,9 +1,14 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
+import type { PDFDocumentProxy } from 'pdfjs-dist';
+import type { FileType, PdfPageData, TextItemData } from '../types';
 
 interface UsePdfExtractorReturn {
   lines: string[];
+  pageData: PdfPageData[];
+  pdfDoc: PDFDocumentProxy | null;
+  fileType: FileType;
   isExtracting: boolean;
   error: string | null;
   extract: (file: File) => Promise<void>;
@@ -12,23 +17,38 @@ interface UsePdfExtractorReturn {
 
 export function usePdfExtractor(): UsePdfExtractorReturn {
   const [lines, setLines] = useState<string[]>([]);
+  const [pageData, setPageData] = useState<PdfPageData[]>([]);
+  const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
+  const [fileType, setFileType] = useState<FileType>(null);
   const [isExtracting, setIsExtracting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Keep a ref so reset() can destroy the loaded doc
+  const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
 
   const reset = useCallback(() => {
+    pdfDocRef.current = null;
+    setPdfDoc(null);
     setLines([]);
+    setPageData([]);
+    setFileType(null);
     setError(null);
     setIsExtracting(false);
   }, []);
 
   const extract = useCallback(async (file: File) => {
+    // Clear any previous document reference before loading a new one
+    pdfDocRef.current = null;
+
     setIsExtracting(true);
     setError(null);
     setLines([]);
+    setPageData([]);
+    setPdfDoc(null);
 
     try {
+      // ── TXT path ──────────────────────────────────────────────────────────
       if (file.type === 'text/plain') {
-        // TXT path — read directly
+        setFileType('txt');
         const text = await file.text();
         const extracted = text
           .split('\n')
@@ -39,50 +59,81 @@ export function usePdfExtractor(): UsePdfExtractorReturn {
         return;
       }
 
-      // PDF path — dynamically import PDF.js to avoid SSR issues
+      // ── PDF path ──────────────────────────────────────────────────────────
+      setFileType('pdf');
       const pdfjs = await import('pdfjs-dist');
       pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
       const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+      const doc = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+      pdfDocRef.current = doc;
+      setPdfDoc(doc);
 
       const allLines: string[] = [];
+      const allPageData: PdfPageData[] = [];
 
-      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-        const page = await pdf.getPage(pageNum);
+      for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
+        const page = await doc.getPage(pageNum);
         const content = await page.getTextContent();
 
-        // Group items into lines by their vertical position (y coordinate)
-        const itemsByY = new Map<number, string[]>();
-        for (const item of content.items) {
-          if (!('str' in item)) continue;
-          const str = item.str.trim();
-          if (!str) continue;
-          // Round y to nearest 2px to group items on the same visual line
-          const y = Math.round((item as { transform: number[] }).transform[5] / 2) * 2;
-          if (!itemsByY.has(y)) itemsByY.set(y, []);
-          itemsByY.get(y)!.push(str);
+        // Group raw items by Y coordinate (rounded to 2px buckets) to form logical lines
+        // We use a Map keyed by rounded-Y → array of raw items
+        const itemsByY = new Map<number, {
+          rawItems: Array<{ str: string; transform: number[]; width: number }>;
+        }>();
+
+        for (const rawItem of content.items) {
+          // TextMarkedContent items don't have `str`
+          if (!('str' in rawItem)) continue;
+          const item = rawItem as { str: string; transform: number[]; width: number };
+          if (!item.str.trim()) continue;
+
+          const y = Math.round(item.transform[5] / 2) * 2;
+          if (!itemsByY.has(y)) itemsByY.set(y, { rawItems: [] });
+          itemsByY.get(y)!.rawItems.push({
+            str: item.str,
+            transform: Array.from(item.transform),
+            width: item.width,
+          });
         }
 
-        // Sort by descending y (top of page first in PDF coord space)
+        // Sort Y descending — in PDF space, higher Y = closer to top of page
         const sortedYs = Array.from(itemsByY.keys()).sort((a, b) => b - a);
+
+        const pageTextItems: TextItemData[] = [];
+
         for (const y of sortedYs) {
-          const lineText = itemsByY.get(y)!.join(' ').trim();
+          const { rawItems } = itemsByY.get(y)!;
+          const lineText = rawItems.map((i) => i.str).join(' ').trim();
+
           if (lineText.length >= 3) {
+            const lineIndex = allLines.length;
             allLines.push(lineText);
+
+            for (const ri of rawItems) {
+              pageTextItems.push({
+                str: ri.str,
+                transform: ri.transform,
+                width: ri.width,
+                lineIndex,
+              });
+            }
           }
         }
+
+        allPageData.push({ pageNum, textItems: pageTextItems });
       }
 
       if (allLines.length === 0) {
         setError(
-          'No readable text found. Your PDF may contain scanned images. Please use an OCR\'d PDF or export as TXT.'
+          "No readable text found. Your PDF may contain scanned images. Please use an OCR'd PDF or export as TXT."
         );
         return;
       }
 
-      console.log('[StageAnchor] PDF lines extracted:', allLines.length);
+      console.log('[StageAnchor] PDF lines extracted:', allLines.length, '| Pages:', doc.numPages);
       setLines(allLines);
+      setPageData(allPageData);
     } catch (err) {
       console.error('[StageAnchor] Extraction error:', err);
       setError('Failed to read the file. Please try a different PDF or TXT file.');
@@ -91,5 +142,5 @@ export function usePdfExtractor(): UsePdfExtractorReturn {
     }
   }, []);
 
-  return { lines, isExtracting, error, extract, reset };
+  return { lines, pageData, pdfDoc, fileType, isExtracting, error, extract, reset };
 }
