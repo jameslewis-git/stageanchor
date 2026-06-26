@@ -17,6 +17,7 @@ export interface TextItemData {
   str: string;
   transform: number[];  // PDF affine transform matrix [a, b, c, d, e, f]
   width: number;        // advance width in PDF user space
+  height: number;       // font height in PDF user space
   lineIndex: number;    // index into lines[] (for fuzzy match cross-reference)
 }
 

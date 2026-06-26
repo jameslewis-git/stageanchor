@@ -112,9 +112,9 @@ function PageRenderer({
         const span = document.createElement('span');
         span.dataset.lineIndex = String(item.lineIndex);
         span.className = 'pdf-hl-span';
+        span.textContent = item.str;
 
         // Position: top-left of the text bounding box
-        // y is the baseline; text ascent ≈ fontHeight above baseline
         span.style.left = `${x}px`;
         span.style.top = `${y - fontHeight}px`;
 
@@ -123,10 +123,11 @@ function PageRenderer({
         // font-rendering discrepancy.
         span.style.width = `${Math.max(1, item.width * cssViewport.scale)}px`;
 
-        // Height covers the character body (ascent) plus a touch of descender
-        span.style.height = `${fontHeight * 1.15}px`;
-
-        // Font-size for readable click target (text is invisible via CSS)
+        // Height covers the character body
+        span.style.height = `${Math.max(1, fontHeight * 1.15)}px`;
+        
+        // Ensure block display so width/height are respected
+        span.style.display = 'block';
         span.style.fontSize = `${fontHeight}px`;
         span.style.lineHeight = '1';
 

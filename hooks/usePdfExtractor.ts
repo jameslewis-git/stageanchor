@@ -79,13 +79,13 @@ export function usePdfExtractor(): UsePdfExtractorReturn {
         // Group raw items by Y coordinate (rounded to 2px buckets) to form logical lines
         // We use a Map keyed by rounded-Y → array of raw items
         const itemsByY = new Map<number, {
-          rawItems: Array<{ str: string; transform: number[]; width: number }>;
+          rawItems: Array<{ str: string; transform: number[]; width: number; height: number }>;
         }>();
 
         for (const rawItem of content.items) {
           // TextMarkedContent items don't have `str`
           if (!('str' in rawItem)) continue;
-          const item = rawItem as { str: string; transform: number[]; width: number };
+          const item = rawItem as { str: string; transform: number[]; width: number; height: number };
           if (!item.str.trim()) continue;
 
           const y = Math.round(item.transform[5] / 2) * 2;
@@ -94,6 +94,7 @@ export function usePdfExtractor(): UsePdfExtractorReturn {
             str: item.str,
             transform: Array.from(item.transform),
             width: item.width,
+            height: item.height,
           });
         }
 
@@ -115,6 +116,7 @@ export function usePdfExtractor(): UsePdfExtractorReturn {
                 str: ri.str,
                 transform: ri.transform,
                 width: ri.width,
+                height: ri.height,
                 lineIndex,
               });
             }
