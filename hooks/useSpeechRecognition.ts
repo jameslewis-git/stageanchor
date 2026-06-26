@@ -52,14 +52,14 @@ export function useSpeechRecognition(): UseSpeechRecognitionReturn {
   const [isSupported, setIsSupported] = useState(true);
 
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
-  // Flag to distinguish intentional stop from the API auto-stopping
   const intentionalStopRef = useRef(false);
   const isListeningRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const SpeechRecognitionAPI =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognitionAPI) {
       setIsSupported(false);
@@ -72,9 +72,14 @@ export function useSpeechRecognition(): UseSpeechRecognitionReturn {
     recognition.lang = 'en-US';
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
+      // Build a rolling window of the last 5 speech results for better fuzzy matching.
+      // Using only the latest fragment (event.resultIndex) is too short — the fuzzy
+      // matcher needs a few words to find a match reliably.
+      const numResults = event.results.length;
+      const windowStart = Math.max(0, numResults - 5);
       let heard = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        heard += event.results[i][0].transcript;
+      for (let i = windowStart; i < numResults; i++) {
+        heard += event.results[i][0].transcript + ' ';
       }
       const cleaned = heard.trim();
       if (cleaned) {
@@ -84,25 +89,28 @@ export function useSpeechRecognition(): UseSpeechRecognitionReturn {
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      console.warn('[StageAnchor] Speech error:', event.error);
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-        setError('Microphone access denied. Please allow mic access in your browser and reload.');
+        setError(
+          'Microphone access denied. Tap the mic button again and allow access when prompted.'
+        );
         setIsListening(false);
         isListeningRef.current = false;
         intentionalStopRef.current = true;
       } else if (event.error === 'no-speech') {
-        // Normal — silence detected, will auto-restart via onend
-      } else {
-        console.warn('[StageAnchor] Speech error:', event.error);
+        // Normal — silence gap, will restart via onend
+      } else if (event.error === 'network') {
+        setError('Network error with speech service. Check your connection and try again.');
       }
+      // Other errors: let onend handle restart
     };
 
     recognition.onend = () => {
-      // Auto-restart unless user intentionally stopped
       if (!intentionalStopRef.current && isListeningRef.current) {
         try {
           recognition.start();
         } catch {
-          // Already started — ignore
+          // Already started
         }
       } else {
         setIsListening(false);
@@ -116,14 +124,42 @@ export function useSpeechRecognition(): UseSpeechRecognitionReturn {
   const start = useCallback(() => {
     if (!recognitionRef.current || isListeningRef.current) return;
     setError(null);
-    intentionalStopRef.current = false;
-    isListeningRef.current = true;
-    setIsListening(true);
-    try {
-      recognitionRef.current.start();
-    } catch {
-      // Already running
-    }
+
+    // Explicitly request mic via getUserMedia FIRST.
+    // This triggers the browser permission dialog on mobile (iOS Safari, Android Chrome)
+    // — SpeechRecognition alone often doesn't show the dialog on first use.
+    const doStart = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Permission granted — immediately stop the test stream.
+        // SpeechRecognition manages its own mic stream internally.
+        stream.getTracks().forEach((t) => t.stop());
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.toLowerCase().includes('denied') || msg.toLowerCase().includes('not allowed')) {
+          setError(
+            'Microphone access denied. Please go to your browser settings, allow mic access for this site, then try again.'
+          );
+        } else if (msg.toLowerCase().includes('found') || msg.toLowerCase().includes('device')) {
+          setError('No microphone found. Please connect a mic and try again.');
+        } else {
+          setError(`Could not access microphone: ${msg}`);
+        }
+        return;
+      }
+
+      // Mic permission granted — start recognition
+      intentionalStopRef.current = false;
+      isListeningRef.current = true;
+      setIsListening(true);
+      try {
+        recognitionRef.current?.start();
+      } catch {
+        // Already running — fine
+      }
+    };
+
+    doStart().catch(console.error);
   }, []);
 
   const stop = useCallback(() => {

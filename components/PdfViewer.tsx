@@ -6,7 +6,7 @@ import type { PdfPageData, ScrollMode } from '../types';
 
 // ---------------------------------------------------------------------------
 // Utility: multiply two PDF affine transform matrices [a,b,c,d,e,f]
-// This is the same as PDF.js's Util.transform()
+// Equivalent to PDF.js's Util.transform()
 // ---------------------------------------------------------------------------
 function applyTransform(m1: number[], m2: number[]): number[] {
   return [
@@ -19,16 +19,23 @@ function applyTransform(m1: number[], m2: number[]): number[] {
   ];
 }
 
-// Toggle the 'highlighted' class on all .pdf-span elements inside a wrapper
+// Toggle 'highlighted' class on all .pdf-span elements inside a wrapper
 function applyHighlights(wrapper: HTMLElement, currentLine: number) {
-  wrapper.querySelectorAll<HTMLSpanElement>('.pdf-span').forEach((span) => {
+  const spans = wrapper.querySelectorAll<HTMLSpanElement>('.pdf-span');
+  let count = 0;
+  spans.forEach((span) => {
     const li = parseInt(span.dataset.lineIndex ?? '-1', 10);
-    span.classList.toggle('highlighted', li === currentLine);
+    const active = li === currentLine;
+    span.classList.toggle('highlighted', active);
+    if (active) count++;
   });
+  if (count > 0) {
+    console.log(`[PdfViewer] Highlighted ${count} span(s) for line ${currentLine}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
-// PageRenderer — renders a single PDF page (canvas + text layer)
+// PageRenderer — renders a single PDF page: canvas (visual) + text layer (overlay)
 // ---------------------------------------------------------------------------
 interface PageRendererProps {
   pdfDoc: PDFDocumentProxy;
@@ -49,12 +56,13 @@ function PageRenderer({
 }: PageRendererProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const renderIdRef = useRef(0);
-  // Ref so the render effect can read currentLine without declaring it as a dep
+  // Always-current reference so the render effect can read currentLine
+  // without declaring it as a dependency (which would trigger canvas re-renders)
   const currentLineRef = useRef(currentLine);
   currentLineRef.current = currentLine;
 
-  // ── Canvas + text layer render ──────────────────────────────────────────
-  // Does NOT depend on currentLine — only re-runs when zoom or page content changes
+  // ── Canvas + text layer render ─────────────────────────────────────────
+  // Depends on pdfDoc / pageNum / zoom / pageItems — NOT currentLine
   useEffect(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
@@ -63,39 +71,58 @@ function PageRenderer({
 
     (async () => {
       const page = await pdfDoc.getPage(pageNum);
-      if (renderId !== renderIdRef.current) return; // cancelled by zoom change etc.
+      if (renderId !== renderIdRef.current) return; // zoom changed while loading
 
-      const viewport = page.getViewport({ scale: zoom });
-      const w = Math.floor(viewport.width);
-      const h = Math.floor(viewport.height);
+      // ── DPR-aware rendering ──────────────────────────────────────────
+      // On high-DPI screens (phones, Retina) devicePixelRatio is 2–3.
+      // We render the canvas at physical-pixel resolution but display it
+      // at CSS-pixel size — this prevents the blurry PDF on mobile.
+      const dpr = window.devicePixelRatio || 1;
 
-      // ── Canvas ────────────────────────────────────────────────────────
+      // CSS-pixel viewport: used for layout and text layer positioning
+      const cssViewport = page.getViewport({ scale: zoom });
+      // Physical-pixel viewport: used for the actual canvas render
+      const physViewport = page.getViewport({ scale: zoom * dpr });
+
+      const cssW = Math.floor(cssViewport.width);
+      const cssH = Math.floor(cssViewport.height);
+      const physW = Math.floor(physViewport.width);
+      const physH = Math.floor(physViewport.height);
+
+      // ── Canvas at full physical resolution ───────────────────────────
       const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
+      canvas.width = physW;          // physical pixels (crisp on retina)
+      canvas.height = physH;
+      canvas.style.width = `${cssW}px`;   // CSS display size
+      canvas.style.height = `${cssH}px`;
       canvas.style.display = 'block';
 
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      const renderTask = page.render({ canvas, canvasContext: ctx, viewport });
+      // Render at physical-pixel resolution using physViewport
+      const renderTask = page.render({ canvas, canvasContext: ctx, viewport: physViewport });
       await renderTask.promise;
       if (renderId !== renderIdRef.current) return;
 
-      // ── Text layer ────────────────────────────────────────────────────
+      // ── Text layer positioned in CSS pixels ─────────────────────────
+      // Spans are transparent overlays — they show only the highlight
+      // colour, never a duplicate text rendering over the canvas.
       const textLayer = document.createElement('div');
       textLayer.className = 'pdf-text-layer';
-      textLayer.style.width = `${w}px`;
-      textLayer.style.height = `${h}px`;
+      textLayer.style.width = `${cssW}px`;
+      textLayer.style.height = `${cssH}px`;
 
+      let spanCount = 0;
       for (const item of pageItems) {
         if (!item.str.trim()) continue;
 
-        // Map item's PDF transform to viewport (screen) coordinates
-        const tx = applyTransform(viewport.transform, item.transform);
+        // Map text item position from PDF space → CSS pixel space
+        // using the cssViewport transform (NOT the physViewport)
+        const tx = applyTransform(cssViewport.transform, item.transform);
         const x = tx[4];
         const y = tx[5];
-        // Font height in screen pixels: magnitude of the y-scale column of tx
+        // Font height = magnitude of the y-scale column of the transformed matrix
         const fontHeight = Math.sqrt(tx[2] ** 2 + tx[3] ** 2);
         if (fontHeight <= 0) continue;
 
@@ -104,39 +131,43 @@ function PageRenderer({
         span.dataset.lineIndex = String(item.lineIndex);
         span.className = 'pdf-span';
 
-        // Position: (x, y) is the text baseline in screen space.
-        // CSS top is from the top of the element, so subtract font height.
+        // (x, y) is the text baseline in CSS pixels; top = baseline − font height
         span.style.left = `${x}px`;
         span.style.top = `${y - fontHeight}px`;
         span.style.fontSize = `${fontHeight}px`;
         span.style.whiteSpace = 'pre';
 
-        // Capture for closure
-        const capturedLineIndex = item.lineIndex;
-        span.addEventListener('click', () => onLineClick(capturedLineIndex));
+        const capturedIndex = item.lineIndex;
+        span.addEventListener('click', () => onLineClick(capturedIndex));
         textLayer.appendChild(span);
+        spanCount++;
       }
 
+      console.log(`[PdfViewer] Page ${pageNum}: rendered ${spanCount} text spans`);
+
       // Swap content
-      wrapper.style.width = `${w}px`;
-      wrapper.style.height = `${h}px`;
+      wrapper.style.width = `${cssW}px`;
+      wrapper.style.height = `${cssH}px`;
       wrapper.innerHTML = '';
       wrapper.appendChild(canvas);
       wrapper.appendChild(textLayer);
 
-      // Apply highlights for current line after render completes
+      // Apply current highlights after render (the highlight effect already ran
+      // before this async render finished, so we reapply here)
       applyHighlights(wrapper, currentLineRef.current);
     })().catch(console.error);
 
     return () => {
-      // Invalidate any in-flight render
+      // Invalidate any in-progress render when deps change
       renderIdRef.current++;
     };
   }, [pdfDoc, pageNum, pageItems, zoom, onLineClick]);
 
-  // ── Highlight update (cheap DOM toggle, no canvas re-render) ────────────
+  // ── Cheap highlight update — no canvas re-render ───────────────────────
   useEffect(() => {
-    if (wrapperRef.current) applyHighlights(wrapperRef.current, currentLine);
+    if (wrapperRef.current) {
+      applyHighlights(wrapperRef.current, currentLine);
+    }
   }, [currentLine]);
 
   return <div ref={wrapperRef} className="pdf-page-wrapper" />;
@@ -151,6 +182,7 @@ interface PdfViewerProps {
   currentLine: number;
   zoom: number;
   scrollMode: ScrollMode;
+  highlightColor: string;
   onLineClick: (line: number) => void;
 }
 
@@ -160,12 +192,13 @@ export default function PdfViewer({
   currentLine,
   zoom,
   scrollMode,
+  highlightColor,
   onLineClick,
 }: PdfViewerProps) {
   const numPages = pdfDoc.numPages;
   const [visiblePage, setVisiblePage] = useState(1);
 
-  // Which page contains the currently matched line?
+  // Identify which page contains the currently highlighted line
   const currentLinePage = useMemo(() => {
     for (const page of pageData) {
       if (page.textItems.some((item) => item.lineIndex === currentLine)) {
@@ -175,24 +208,28 @@ export default function PdfViewer({
     return 1;
   }, [pageData, currentLine]);
 
-  // Auto-navigate when currentLine changes
+  // Auto-navigate / scroll when voice match advances the current line
   useEffect(() => {
     if (scrollMode === 'page') {
-      // Jump to the page containing the match
       setVisiblePage(currentLinePage);
     } else {
-      // Continuous: smooth-scroll to the highlighted span
+      // Give the highlight effect time to fire before we scroll
       requestAnimationFrame(() => {
         const el = document.querySelector<HTMLElement>('.pdf-span.highlighted');
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
       });
     }
   }, [currentLine, scrollMode, currentLinePage]);
 
-  // ── Page-by-page mode ────────────────────────────────────────────────────
+  // ── Page-by-page mode ──────────────────────────────────────────────────
   if (scrollMode === 'page') {
     return (
-      <div className="pdf-viewer pdf-viewer--page">
+      <div
+        className="pdf-viewer pdf-viewer--page"
+        style={{ '--hl-color': highlightColor } as React.CSSProperties}
+      >
         <div className="pdf-page-nav">
           <button
             className="pdf-nav-btn"
@@ -229,9 +266,12 @@ export default function PdfViewer({
     );
   }
 
-  // ── Continuous scroll mode ───────────────────────────────────────────────
+  // ── Continuous scroll mode ─────────────────────────────────────────────
   return (
-    <div className="pdf-viewer pdf-viewer--continuous">
+    <div
+      className="pdf-viewer pdf-viewer--continuous"
+      style={{ '--hl-color': highlightColor } as React.CSSProperties}
+    >
       {Array.from({ length: numPages }, (_, i) => i + 1).map((pageNum) => (
         <div key={pageNum} className="pdf-page-container">
           <div className="pdf-page-number">Page {pageNum}</div>

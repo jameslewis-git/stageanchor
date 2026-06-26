@@ -25,12 +25,15 @@ export function useScriptTracker(lines: string[]): UseScriptTrackerReturn {
       lastTranscriptRef.current = transcript;
 
       const match = findBestMatch(transcript, lines, currentLineRef.current);
+      console.log(
+        `[StageAnchor] transcript="${transcript.slice(0, 60)}" → match=${match} (current=${currentLineRef.current})`
+      );
       if (match !== -1 && match !== currentLineRef.current) {
-        console.log(
-          `[StageAnchor] Matched line ${match}: "${lines[match].slice(0, 60)}..."`
-        );
+        console.log(`[StageAnchor] ✅ Advancing to line ${match}: "${lines[match].slice(0, 60)}"`);
         currentLineRef.current = match;
         setCurrentLine(match);
+      } else if (match === -1) {
+        console.log(`[StageAnchor] ❌ No match found. Line ${currentLineRef.current} held.`);
       }
     },
     [lines]

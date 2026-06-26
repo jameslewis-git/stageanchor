@@ -621,10 +621,11 @@ html, body {
   background-color: rgba(124, 111, 247, 0.15);
 }
 
-/* The main highlight — amber/gold, classic teleprompter colour */
+/* The main highlight — strong amber so it's clearly visible on stage */
 .pdf-span.highlighted {
-  background-color: rgba(251, 191, 36, 0.45);
-  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.2);
+  background-color: rgba(251, 191, 36, 0.65);
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.4), 0 0 8px rgba(251, 191, 36, 0.3);
+  border-radius: 3px;
 }
 
 /* ---- Page navigation (page-by-page mode) ---- */
