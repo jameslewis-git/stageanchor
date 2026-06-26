@@ -597,34 +597,41 @@ html, body {
   line-height: 0; /* prevent gap below canvas */
 }
 
-/* Text layer overlay */
+/* ── Text overlay layer ────────────────────────────────────────────────
+   A transparent div sitting exactly over the canvas. Contains invisible
+   rectangular spans — one per PDF text item. Clicking a span jumps to
+   that line; voice matching highlights the current line automatically.  */
 .pdf-text-layer {
   position: absolute;
   top: 0;
   left: 0;
   overflow: hidden;
-  pointer-events: none; /* canvas handles visual; text layer handles clicks */
+  pointer-events: none; /* container is pass-through; spans handle clicks */
 }
 
-/* Individual text spans */
-.pdf-span {
+/* Invisible span over each piece of PDF text */
+.pdf-hl-span {
   position: absolute;
-  color: transparent;
-  cursor: pointer;
+  color: transparent;     /* text invisible — PDF canvas shows beneath */
   white-space: pre;
-  pointer-events: all;
-  border-radius: 2px;
-  transition: background-color 150ms ease;
+  pointer-events: all;    /* clickable */
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background-color 80ms ease;
 }
 
-.pdf-span:hover {
-  background-color: rgba(124, 111, 247, 0.15);
+/* Hover: light purple tint to show the span is interactive */
+.pdf-hl-span:hover:not(.highlighted) {
+  background-color: rgba(139, 92, 246, 0.12);
 }
 
-/* The main highlight — strong amber so it's clearly visible on stage */
-.pdf-span.highlighted {
-  background-color: rgba(251, 191, 36, 0.65);
-  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.4), 0 0 8px rgba(251, 191, 36, 0.3);
+/* ─── THE HIGHLIGHT ───────────────────────────────────────────────
+   80% opaque coloured background sitting on top of the PDF canvas.
+   The canvas text shows through the 20% transparent gap, keeping
+   it readable — exactly like a physical highlighter pen on paper.
+   The color is set as a CSS custom property --hl-color on the viewer. */
+.pdf-hl-span.highlighted {
+  background-color: var(--hl-color, rgba(253, 224, 71, 0.80));
   border-radius: 3px;
 }
 
@@ -724,3 +731,35 @@ html, body {
   .scroll-mode-btn { padding: 0.4rem 0.45rem; }
 }
 
+/* ---- Highlight colour palette ---- */
+.hl-palette {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.hl-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 120ms ease, border-color 120ms ease;
+  flex-shrink: 0;
+}
+
+.hl-swatch:hover {
+  transform: scale(1.2);
+}
+
+.hl-swatch--active {
+  border-color: white;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.4);
+  transform: scale(1.15);
+}
+
+@media (max-width: 600px) {
+  .hl-swatch { width: 20px; height: 20px; }
+  .hl-palette { gap: 0.25rem; }
+}

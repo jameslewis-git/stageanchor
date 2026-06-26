@@ -4,7 +4,8 @@ import { useState, useCallback, useEffect } from 'react';
 import UploadScreen from '../components/UploadScreen';
 import ScriptDisplay from '../components/ScriptDisplay';
 import PdfViewer from '../components/PdfViewer';
-import Toolbar from '../components/Toolbar';
+import Toolbar, { HIGHLIGHT_PRESETS } from '../components/Toolbar';
+import type { HighlightPreset } from '../components/Toolbar';
 import { usePdfExtractor } from '../hooks/usePdfExtractor';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { useScriptTracker } from '../hooks/useScriptTracker';
@@ -22,6 +23,7 @@ export default function Home() {
   const [pdfZoom, setPdfZoom] = useState(DEFAULT_PDF_ZOOM);
   const [scrollMode, setScrollMode] = useState<ScrollMode>('continuous');
   const [appMode, setAppMode] = useState<'upload' | 'reading'>('upload');
+  const [highlightPreset, setHighlightPreset] = useState(HIGHLIGHT_PRESETS[0]);
 
   const {
     lines,
@@ -81,6 +83,10 @@ export default function Home() {
     );
   }, []);
 
+  const handleHighlightChange = useCallback((preset: HighlightPreset) => {
+    setHighlightPreset(preset);
+  }, []);
+
   return (
     <main className="app-root">
       {appMode === 'upload' ? (
@@ -99,6 +105,8 @@ export default function Home() {
             onPdfZoomChange={handlePdfZoomChange}
             scrollMode={scrollMode}
             onScrollModeChange={setScrollMode}
+            highlightPresetId={highlightPreset.id}
+            onHighlightChange={handleHighlightChange}
             isListening={isListening}
             onMicToggle={handleMicToggle}
             transcript={transcript}
@@ -119,6 +127,7 @@ export default function Home() {
               currentLine={currentLine}
               zoom={pdfZoom}
               scrollMode={scrollMode}
+              highlightColor={highlightPreset.color}
               onLineClick={setCurrentLine}
             />
           ) : (

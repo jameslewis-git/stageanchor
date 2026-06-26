@@ -16,36 +16,37 @@ export interface HighlightPreset {
 
 export const HIGHLIGHT_PRESETS: HighlightPreset[] = [
   {
-    id: 'blue',
-    name: 'Blue (default)',
-    color: 'rgba(59, 130, 246, 0.80)',
-    swatch: '#3b82f6',
-  },
-  {
     id: 'yellow',
     name: 'Yellow',
-    color: 'rgba(234, 179, 8, 0.90)',
-    swatch: '#eab308',
+    color: 'rgba(253, 224, 71, 0.80)',   // classic highlighter yellow
+    swatch: '#fde047',
+  },
+  {
+    id: 'cyan',
+    name: 'Cyan',
+    color: 'rgba(34, 211, 238, 0.75)',
+    swatch: '#22d3ee',
   },
   {
     id: 'green',
     name: 'Green',
-    color: 'rgba(34, 197, 94, 0.80)',
-    swatch: '#22c55e',
+    color: 'rgba(74, 222, 128, 0.80)',
+    swatch: '#4ade80',
   },
   {
     id: 'pink',
     name: 'Pink',
-    color: 'rgba(236, 72, 153, 0.75)',
-    swatch: '#ec4899',
+    color: 'rgba(244, 114, 182, 0.75)',
+    swatch: '#f472b6',
   },
   {
     id: 'orange',
     name: 'Orange',
-    color: 'rgba(249, 115, 22, 0.80)',
-    swatch: '#f97316',
+    color: 'rgba(251, 146, 60, 0.80)',
+    swatch: '#fb923c',
   },
 ];
+
 
 interface ToolbarProps {
   fileType: FileType;

@@ -1,47 +1,78 @@
 import { normalize } from './textNormalize';
 
 /**
- * Returns true if enough significant spoken words appear in the script line.
- * "Significant" = longer than 3 chars (filters out "a", "the", "is", etc.)
- * Threshold: ≥40% of significant spoken words must match, minimum 1.
+ * Scores how well a spoken phrase matches a script line.
+ * Returns 0.0 (no match) to 1.0 (perfect match).
+ *
+ * Uses "significant" words (>2 chars) to filter noise words like
+ * "a", "the", "is", "of", etc. Matching is substring-based so
+ * "Jehovahs" will still match "Jehovah's" after normalization.
  */
-export function wordsMatch(spoken: string, line: string): boolean {
-  const spokenWords = normalize(spoken).split(' ');
+function scoreMatch(spoken: string, line: string): number {
+  const spokenWords = normalize(spoken)
+    .split(' ')
+    .filter((w) => w.length > 2);
   const lineNorm = normalize(line);
-  const significantWords = spokenWords.filter((w) => w.length > 3);
-  if (significantWords.length === 0) return false;
-  const matchCount = significantWords.filter((w) => lineNorm.includes(w)).length;
-  return matchCount >= Math.max(1, Math.floor(significantWords.length * 0.4));
+  if (spokenWords.length === 0) return 0;
+  const matchCount = spokenWords.filter((w) => lineNorm.includes(w)).length;
+  return matchCount / spokenWords.length;
 }
 
 /**
- * Searches a bounded window around currentLine for the best matching line.
- * - First pass: 1 line behind → 10 lines ahead (cheap, handles normal flow)
- * - Second pass: 3 behind → 20 ahead (handles skips / ad-libs)
- * - Returns -1 if no match found (hold last position)
+ * Finds the best-matching script line for the given transcript.
+ *
+ * Three passes, each searching for the HIGHEST-scoring line (not just
+ * the first that clears the threshold):
+ *
+ *  Pass 1 — Narrow  (currentLine−2 → currentLine+15)
+ *    Handles normal line-by-line forward delivery.
+ *
+ *  Pass 2 — Wide    (currentLine−5 → currentLine+50)
+ *    Handles jumping ahead in the script (skipping large sections).
+ *    If you jump 30 lines ahead this will still find it.
+ *
+ *  Pass 3 — Full-script
+ *    Emergency recovery when you're completely lost or jumped very far.
+ *    Requires ≥3 significant spoken words and a stricter 60% match
+ *    threshold to avoid false positives across 100+ lines.
+ *
+ * Returns -1 if nothing reaches the minimum score (hold current position).
  */
 export function findBestMatch(
   transcript: string,
   lines: string[],
   currentLine: number
 ): number {
-  const search = (start: number, end: number): number => {
-    for (let i = start; i <= end; i++) {
-      if (wordsMatch(transcript, lines[i])) return i;
+  const N = lines.length;
+
+  const bestInRange = (start: number, end: number, minScore: number): number => {
+    let bestIdx = -1;
+    let bestScore = minScore;
+    for (let i = Math.max(0, start); i <= Math.min(N - 1, end); i++) {
+      const s = scoreMatch(transcript, lines[i]);
+      if (s > bestScore) {
+        bestScore = s;
+        bestIdx = i;
+      }
     }
-    return -1;
+    return bestIdx;
   };
 
-  // Narrow pass
-  const narrowResult = search(
-    Math.max(0, currentLine - 1),
-    Math.min(lines.length - 1, currentLine + 10)
-  );
-  if (narrowResult !== -1) return narrowResult;
+  // Pass 1: narrow forward window (normal delivery)
+  const r1 = bestInRange(currentLine - 2, currentLine + 15, 0.40);
+  if (r1 !== -1) return r1;
 
-  // Wide fallback
-  return search(
-    Math.max(0, currentLine - 3),
-    Math.min(lines.length - 1, currentLine + 20)
-  );
+  // Pass 2: wide window (handles jumps up to 50 lines ahead)
+  const r2 = bestInRange(currentLine - 5, currentLine + 50, 0.40);
+  if (r2 !== -1) return r2;
+
+  // Pass 3: full-script search (completely lost / very large jump)
+  // Only trigger with ≥3 significant words to reduce noise
+  const sigWords = normalize(transcript).split(' ').filter((w) => w.length > 2);
+  if (sigWords.length >= 3) {
+    const r3 = bestInRange(0, N - 1, 0.60);
+    if (r3 !== -1) return r3;
+  }
+
+  return -1;
 }

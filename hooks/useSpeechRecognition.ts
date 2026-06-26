@@ -125,37 +125,54 @@ export function useSpeechRecognition(): UseSpeechRecognitionReturn {
     if (!recognitionRef.current || isListeningRef.current) return;
     setError(null);
 
-    // Explicitly request mic via getUserMedia FIRST.
-    // This triggers the browser permission dialog on mobile (iOS Safari, Android Chrome)
-    // — SpeechRecognition alone often doesn't show the dialog on first use.
-    const doStart = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        // Permission granted — immediately stop the test stream.
-        // SpeechRecognition manages its own mic stream internally.
-        stream.getTracks().forEach((t) => t.stop());
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg.toLowerCase().includes('denied') || msg.toLowerCase().includes('not allowed')) {
-          setError(
-            'Microphone access denied. Please go to your browser settings, allow mic access for this site, then try again.'
-          );
-        } else if (msg.toLowerCase().includes('found') || msg.toLowerCase().includes('device')) {
-          setError('No microphone found. Please connect a mic and try again.');
-        } else {
-          setError(`Could not access microphone: ${msg}`);
-        }
+    // Microphone requires HTTPS on mobile (except localhost)
+    if (typeof window !== 'undefined') {
+      const isLocalhost =
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1';
+      const isSecure = window.location.protocol === 'https:';
+      if (!isSecure && !isLocalhost) {
+        setError(
+          'Microphone needs HTTPS. Open https://stageanchor.netlify.app on your phone instead of the local address.'
+        );
         return;
       }
+    }
 
-      // Mic permission granted — start recognition
+    const doStart = async () => {
+      // getUserMedia explicitly shows the browser permission dialog.
+      // Without this, some mobile browsers (iOS Safari, Chrome Android)
+      // silently deny SpeechRecognition without ever asking the user.
+      if (navigator.mediaDevices?.getUserMedia) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          // Permission granted — stop the test stream; SpeechRecognition
+          // manages its own mic stream internally.
+          stream.getTracks().forEach((t) => t.stop());
+        } catch (err) {
+          const msg = err instanceof Error ? err.message.toLowerCase() : '';
+          if (msg.includes('denied') || msg.includes('not allowed') || msg.includes('permission')) {
+            setError(
+              'Microphone access denied. Go to your browser settings → Site Permissions → allow the mic for this site, then try again.'
+            );
+          } else if (msg.includes('found') || msg.includes('device')) {
+            setError('No microphone found. Please connect a microphone and try again.');
+          } else {
+            setError(`Microphone error: ${err instanceof Error ? err.message : String(err)}`);
+          }
+          return;
+        }
+      }
+      // If mediaDevices is unavailable (older browser), fall through and
+      // let SpeechRecognition handle permission itself.
+
       intentionalStopRef.current = false;
       isListeningRef.current = true;
       setIsListening(true);
       try {
         recognitionRef.current?.start();
       } catch {
-        // Already running — fine
+        // Recognition already running — that's fine
       }
     };
 
